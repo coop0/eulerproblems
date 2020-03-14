@@ -1,0 +1,693 @@
+/* Solution to comp10002 Assignment 2, 2019 semester 2.
+
+   Authorship Declaration:
+
+   (1) I certify that the program contained in this submission is completely
+   my own individual work, except where explicitly noted by comments that
+   provide details otherwise.  I understand that work that has been developed
+   by another student, or by me in collaboration with other students,
+   or by non-students as a result of request, solicitation, or payment,
+   may not be submitted for assessment in this subject.  I understand that
+   submitting for assessment work developed by or in collaboration with
+   other students or non-students constitutes Academic Misconduct, and
+   may be penalized by mark deductions, or by other penalties determined
+   via the University of Melbourne Academic Honesty Policy, as described
+   at https://academicintegrity.unimelb.edu.au.
+
+   (2) I also certify that I have not provided a copy of this work in either
+   softcopy or hardcopy or any other form to any other student, and nor will
+   I do so until after the marks are released. I understand that providing
+   my work to other students, regardless of my intention or any undertakings
+   made to me by that other student, is also Academic Misconduct.
+
+   (3) I further understand that providing a copy of the assignment
+   specification to any form of code authoring or assignment tutoring
+   service, or drawing the attention of others to such services and code
+   that may have been made available via such a service, may be regarded
+   as Student General Misconduct (interfering with the teaching activities
+   of the University and/or inciting others to commit Academic Misconduct).
+   I understand that an allegation of Student General Misconduct may arise
+   regardless of whether or not I personally make use of such solutions
+   or sought benefit from such actions.
+
+   Signed by: Cooper Marshall
+   Dated:     7/10/2019
+
+*/
+
+//Test for stepping off the grid
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <assert.h>
+
+typedef struct {
+	int row;
+	int column;
+} sizes_t;
+	
+typedef struct {
+	sizes_t placement;
+} positions_t;
+	
+typedef struct node node_t;
+struct node {
+	sizes_t coords;
+	node_t *next;
+	node_t *prev;
+}; 
+
+typedef struct {
+	sizes_t initial;
+	sizes_t goal;
+} objective_t;
+
+typedef struct {
+	sizes_t coords;
+	int num;
+} gridpoints_t;
+
+
+sizes_t size();
+objective_t objectivecells();
+sizes_t pointinterpreter(char initial[50], int length);
+positions_t * blockcreation(int size, positions_t blocks[],int *block_size, int stage);
+node_t *pathing();
+void printroute(node_t *first);
+int pathcheck(node_t *first, positions_t blocks[],
+	int blockcount, objective_t objectives, int holdoutput);
+node_t *make_empty_list(void);
+node_t *create_node(sizes_t coordinates, node_t* previous);
+int objectives_check(node_t *first, objective_t obj);
+int illegalmove_check(node_t *first);
+int block_check(node_t *first, positions_t blocks[], int block_count, int holdoutput);
+node_t *find_last(node_t* first);
+int printgrid(int status, sizes_t gridsize, node_t *first, positions_t blocks[],
+	objective_t obj, int block_count, int holdout);
+gridpoints_t *grid_create(sizes_t gridsize, gridpoints_t gridpoints[], int** blockgrid, int** grid, int *size, int *current, node_t *contination);
+int checkvacency(int ** blockgrid, gridpoints_t point, sizes_t gridsize, int row, int column, int **grids);
+int checkpath(node_t *contination, gridpoints_t point);
+void updatepath(node_t *breakpoint, sizes_t pathspot, int counter, int ** grids, sizes_t gridsize);
+void printthing(sizes_t gridsize, node_t *first, positions_t blocks[],
+	objective_t obj, int block_count);
+
+/* Main function */
+int
+main(int argc, char *argv[]) {
+	int moved;
+	int out=0;
+	printf("==STAGE 0=======================================\n");
+	sizes_t	gridsize = size();
+	printf("The grid has %d rows and %d columns.\n", gridsize.row,
+	gridsize.column);
+	objective_t objectives;
+	objectives = objectivecells();
+	int size = 6;
+	int block_count;
+	positions_t *blocks = (positions_t *)malloc(size*sizeof(positions_t));
+	blocks = blockcreation(size, blocks, &block_count, 1);
+	assert(blocks);
+	node_t *firstl;
+	printf("The grid has %d block(s).\n", block_count);
+	printf("The initial cell in the grid is [%d,%d].\n", 
+		objectives.initial.row, objectives.initial.column);
+	printf("The goal cell in the grid is [%d,%d].\n",
+		objectives.goal.row, objectives.goal.column);
+	printf("The proposed route in the grid is: \n");
+	firstl = pathing();
+	int status;
+
+	status = pathcheck(firstl, blocks, block_count, objectives, 0);
+	printf("==STAGE 1=======================================\n");
+	printgrid(status, gridsize, firstl, blocks, objectives ,block_count, 0);
+	blocks = blockcreation(size, blocks, &block_count, 2);
+	if (status >3) {
+		if (blocks!=NULL) {
+			printf("==STAGE 2=======================================\n");		
+		}
+		while(blocks!=NULL) {
+			status = pathcheck(firstl, blocks, block_count, objectives, 1);
+			moved = printgrid(status, gridsize, firstl, blocks, objectives ,block_count, out);
+			out = 1;
+			status = pathcheck(firstl, blocks, block_count, objectives, 1);
+			if (status != 4 || moved == 0) {
+				printf("================================================\n");
+				blocks = blockcreation(size, blocks, &block_count, 2);
+				out = 0;
+			}
+		}
+	}
+	else {
+		printf("================================================\n");
+	}
+	
+	
+	return 1;
+}
+
+/* Reads in the size from stdin */
+sizes_t size(){	
+	sizes_t gridsize;
+	short int rows=0;
+	short int columns=0;
+	scanf("%hdx%hd", &rows, &columns);
+  	gridsize.row = rows;
+  	gridsize.column = columns;
+  	return gridsize;
+}
+/* Reads in both the objectives */
+objective_t objectivecells() {
+	objective_t objectives;
+	short int x= 0;
+	short int y = 0;
+	scanf(" [%hd,%hd] ", &x, &y);
+	objectives.initial.row = x;
+	objectives.initial.column = y;
+	scanf(" [%hd,%hd] ", &x, &y);
+	objectives.goal.row = x;
+	objectives.goal.column = y;
+	return objectives;
+}
+/* Reads in the blocks for stage0 and stage 2 and stores them in a list */
+positions_t *blockcreation(int size, positions_t blocks[], int *block_size, int stage) {
+	size =2;	
+	int i=0;
+	short int x;
+	short int y;
+	int a;
+	int b;
+	char o[10];
+	positions_t empty[1];
+	if (stage==2) { /* Make sure there was a $ for stage 2*/
+		b= scanf("%s",o);
+		if (b == 1)	 {
+			a = scanf(" [%hd,%hd] ", &x, &y);	
+			if (a != 2 && a!=EOF) {
+				(*block_size) = 0;
+				return blocks;	
+			}
+			(*block_size) = 0;
+			blocks[i].placement.row = x;
+			blocks[i].placement.column = y;
+			i++;
+		}
+		else {
+			return NULL;
+		 }
+	}
+	while (scanf(" [%hd,%hd] ", &x, &y) == 2) { /* Read the input */
+		if (i == size){
+			size = size*2;
+			blocks = (positions_t *)realloc(blocks, (size)*sizeof(positions_t));
+			assert(blocks);
+		}
+		blocks[i].placement.row = x;
+		blocks[i].placement.column = y;
+		i++;
+	}
+	(*block_size) = i; /*Set the pointer to i for the counter number of blocks*/
+	return blocks;
+}
+
+/* Reads in the path */
+node_t *pathing() {
+	node_t *current = NULL;
+	node_t *first = NULL;
+	short int x= 0;
+	short int y=0;
+	scanf("%*s");
+	while (scanf(" [%hd,%hd]-> ", &x, &y) == 2) { /*Scans in the path */
+		sizes_t coordinates;
+		coordinates.row = x;
+		coordinates.column =y;
+		node_t *node = create_node(coordinates, current); /* creates the node */
+		if (current != NULL) {		
+			current->next = node;
+		}
+		current = node;
+		if (first == NULL) {
+			first = current;
+		}
+	}
+
+	printroute(first);
+	return first;
+}
+/* Prints the route */
+void printroute(node_t *current_a){
+	int i=1;
+	while(current_a != NULL) {
+		printf("[%d,%d]", current_a->coords.row, current_a->coords.column);
+		if (current_a->next != NULL){
+			printf("->");
+		}
+		else {
+			break;
+		}
+		if ((i%5)==0 && i!=0){
+			printf("\n"); /* Print a newline for every 5th set of coords */
+		}
+		i++;
+		current_a= current_a->next;
+	}
+	printf(".\n");
+}
+/* Validates the path and finds the errors */
+int pathcheck(node_t *first, positions_t blocks[],
+	int blockcount, objective_t objectives, int holdoutput){
+	int a;
+	if ((a=objectives_check(first, objectives)) != 0) { /*Check objectives */
+		return a;
+	}
+	if ((a =  illegalmove_check(first)) != 0) { /* Check for illegal moves */
+		return a;
+	}
+	if ((a =  block_check(first, blocks, blockcount, holdoutput)) != 0) {
+		/* Checks for blocks */
+		return a;
+	}
+	/* Only prints if it should output */
+	if (!holdoutput){
+		printf("The route is valid!\n");
+	}
+	return 5;
+}
+/* Checks that the goal cell and initial cell are the same as on the path */
+int objectives_check(node_t *first, objective_t obj) {
+	node_t *last = find_last(first);
+	if (obj.initial.row != first->coords.row||
+		obj.initial.column != first->coords.column ){
+		printf("Initial cell in the route is wrong!\n");
+		return 1;
+	}
+
+	if (obj.goal.row != last->coords.row||
+		obj.goal.column != last->coords.column ){
+		printf("Goal cell in the route is wrong!\n");
+		return 2;
+	}
+	return 0;		
+}
+/* Checks for an illegal move */
+int illegalmove_check(node_t *first) {
+	node_t *prev = first;
+	node_t *current = first->next;
+	while (current != NULL) {
+		int xdiff=0; int ydiff=0;
+		xdiff = abs(prev->coords.row - current->coords.row);
+		ydiff = abs(prev->coords.column - current->coords.column);
+		if ((xdiff+ydiff) != 1){
+			printf("There is an illegal move in this route!\n");
+			return 3;
+		}
+		prev = current;
+		current = current->next;
+	}
+	return 0;
+}
+/* Checks to see whether a block is on the path */
+int block_check(node_t *first, positions_t blocks[], int block_count, int holdoutput) {
+	int i;
+	node_t *current = first;
+	while (current != NULL) {
+		for (i=0;i<block_count;i++) {
+			if (blocks[i].placement.row == current->coords.row &&
+				blocks[i].placement.column == current->coords.column){
+				if (!holdoutput) {
+					printf("There is a block on this route!\n");
+				}
+				return 4;
+			}
+		}
+		current = current->next;
+	}
+	return 0;
+}
+/* Finds the last position in the path */
+node_t *find_last(node_t* first) {
+	node_t *current = first;
+	while(1) {
+		if (current->next == NULL) {
+			break;
+		}
+		current = current->next;
+	}
+	node_t *last = current;	
+	return last;	
+}
+	
+	
+/* Creates a new node object that stores the path */
+node_t *create_node(sizes_t coordinates, node_t* previous) {
+	node_t *node = (node_t*)malloc(sizeof(node_t));
+	assert(node!=NULL);
+	node->coords = coordinates;
+	node->prev = previous;
+	node->next = NULL;
+	return node;
+}
+
+/* Function that prints the current grid with the path, blocks, initial and goal
+cell */
+void printthing(sizes_t gridsize, node_t *first, positions_t blocks[],
+	objective_t obj, int block_count) {
+	int i;
+	int k;
+	int l;
+	int m;
+	int j;
+	int a = gridsize.column;
+	int b = gridsize.row;
+	char **grid = (char **)malloc((gridsize.row+1)*sizeof(char*));
+	for (i=0; i<gridsize.row+1;i++) {
+		grid[i] = (char *)malloc(gridsize.column*sizeof(char));
+	}
+	for(k=0; k<gridsize.row+1; k++){
+		for(l=0; l<gridsize.column+1; l++) {
+			grid[k][l] = ' ';	
+		}
+	}
+
+	for (i=0; i<a; i++){ /* setup the column of the output */
+		char x;
+		x = i%10 + '0';
+		grid[0][i+1] = x;	
+	}	
+	for (j=0; j<b; j++){ /* setup for the row of the output */
+		char x;
+		x = j%10 + '0';
+		grid[j+1][0] = x;		
+	}
+	node_t *current = first;
+	gridsize.column = a;
+	gridsize.row = b;
+	/* Assigns the rows */
+	while(current != NULL) {
+		grid[current->coords.row+1][current->coords.column+1] = '*';	
+		current = current->next;	
+	}
+	/* Places the blocks */
+	for(m=0;m<block_count; m++) {
+		grid[(blocks[m].placement.row) + 1][(blocks[m].placement.column) + 1] = '#';
+	}
+	/* Places the initial cell */
+	grid[obj.initial.row+1][obj.initial.column+1] = 'I';
+	/* Places the goal cell */
+	grid[obj.goal.row+1][obj.goal.column+1] = 'G';
+	for(k=0; k<gridsize.row+1; k++){
+		for(l=0; l<gridsize.column+1; l++) {
+			printf("%c", grid[k][l]);	
+			
+		}
+		printf("\n");	
+	}
+}
+/* Function that prints the grid and fixes the bath when it is broken */
+int printgrid(int status, sizes_t gridsize, node_t *first, positions_t blocks[],
+	objective_t obj, int block_count, int holdout) {
+	int i;
+	int k;
+	int l;	
+	if (!holdout) {
+	printthing(gridsize, first, blocks, obj, block_count);
+	}
+	if (status==4) {
+		int a = 1;
+		node_t * current = first;
+		while (current != NULL && a) {
+			for (i=0;i<block_count;i++) {
+				if (blocks[i].placement.row == current->coords.row &&
+					blocks[i].placement.column == current->coords.column){
+						a = 0;
+						break;
+					}
+			}
+		if(a){
+			current = current->next;
+		}
+		}
+
+		node_t* beforebreak = current->prev;
+		int **grids = (int **)malloc(gridsize.row*sizeof(int*));
+		for (i=0; i<gridsize.row;i++) {
+			grids[i] = (int *)malloc(gridsize.column*sizeof(int));
+		}
+		for(k=0; k<gridsize.row; k++){
+			for(l=0; l<gridsize.column; l++) {
+				grids[k][l] = -1;	
+			}
+		}                       
+		int **blockgrid = (int **)malloc(gridsize.row*sizeof(int*));
+		for (i=0; i<gridsize.row;i++) {
+			blockgrid[i] = (int *)malloc(gridsize.column*sizeof(int));
+		}
+		for(k=0; k<gridsize.row; k++){
+			for(l=0; l<gridsize.column; l++) {
+				blockgrid[k][l] = 0;	
+			}
+		}
+		for (i=0; i<block_count; i++) {
+			blockgrid[blocks[i].placement.row][blocks[i].placement.column] = 1;
+		}
+		int size = 4;
+		gridpoints_t *queue = (gridpoints_t *)malloc(size*sizeof(gridpoints_t));
+		queue[0].coords.row = beforebreak->coords.row;
+		queue[0].coords.column = beforebreak->coords.column;
+		queue[0].num = 0;
+		grids[beforebreak->coords.row][beforebreak->coords.column] = 0;
+		int counter= 1;
+		int notfound = 1;
+		node_t *contination = beforebreak->next;
+		while(notfound){
+			queue = grid_create(gridsize ,queue, blockgrid, grids, &size, &counter, contination);
+			if (queue[0].num == -1 || queue[0].num == -2){
+				notfound = 0;	
+			}
+			if (counter ==2) {
+				break;
+			}
+		}
+		if (queue[0].num == -1) {
+			updatepath(beforebreak, queue[counter-1].coords, counter, grids, gridsize);
+			status = pathcheck(first, blocks, block_count, obj, 1);
+			if (status ==5){
+				printf("------------------------------------------------\n");
+				printthing(gridsize, first, blocks, obj, block_count);
+				printf("------------------------------------------------\n");
+				printroute(first);
+				status = pathcheck(first, blocks, block_count, obj, 0);
+			}
+			for (i=0;i<gridsize.row;i++) {
+				free(grids[i]);
+			}
+			free(grids);
+			if (status !=4 && status != 5) {
+				return 0;	
+			}
+		}
+		else {
+			printf("------------------------------------------------\n");
+			printthing(gridsize, first, blocks, obj, block_count);
+			printf("------------------------------------------------\n");
+			printf("The route cannot be repaired!\n");
+			return 0;
+			
+}
+	}
+	return 1;
+}
+
+/* Floods the grid with values of the steps away from the initial cell of the
+path */
+gridpoints_t * grid_create(sizes_t gridsize, gridpoints_t gridpoints[], int** blockgrid, int** grids, int *size, int *counter, node_t *contination){
+	int i;
+	int newcount = *counter;
+	int neverup = 0;
+	int neverdown = 0;
+	int neverleft = 0;
+	int neverright = 0;
+	for (i=0;i<*counter;i++) {
+		int down=0;
+		int up=0;
+		int left=0;
+		int right=0;
+		int status = 0;
+		down = checkvacency(blockgrid, gridpoints[i], gridsize, 1,0, grids);
+		up = checkvacency(blockgrid, gridpoints[i], gridsize, -1,0, grids);
+		left = checkvacency(blockgrid, gridpoints[i], gridsize, 0,-1, grids);
+		right = checkvacency(blockgrid, gridpoints[i], gridsize, 0,1, grids);
+		if (*size <= newcount+4) {
+			*size = *size*2;	
+			gridpoints = (gridpoints_t *)realloc(gridpoints, (*size)*sizeof(gridpoints_t));
+		}
+		if (up) {
+			gridpoints[newcount].coords.row = gridpoints[i].coords.row-1;
+			gridpoints[newcount].coords.column = gridpoints[i].coords.column;
+			gridpoints[newcount].num = gridpoints[i].num+1;
+			status = checkpath(contination, gridpoints[newcount]);
+			newcount++;
+			neverup = 1;
+		}
+		if (status) {
+			*counter = newcount;
+			gridpoints[0].num = -1;
+			return gridpoints;
+		}
+		if (down) {
+			gridpoints[newcount].coords.row = gridpoints[i].coords.row+1;
+			gridpoints[newcount].coords.column = gridpoints[i].coords.column;
+			gridpoints[newcount].num = gridpoints[i].num+1;
+			status = checkpath(contination, gridpoints[newcount]);
+			newcount++;
+			neverdown = 1;
+		}
+		if (status) {
+			*counter = newcount;
+			gridpoints[0].num = -1;
+			return gridpoints;
+		}
+
+		if (left) {
+			gridpoints[newcount].coords.row = gridpoints[i].coords.row;
+			gridpoints[newcount].coords.column = gridpoints[i].coords.column-1;
+			gridpoints[newcount].num = gridpoints[i].num+1;
+			status = checkpath(contination, gridpoints[newcount]);
+			newcount++;
+			neverleft = 1;
+		}
+		if (status) {
+			*counter = newcount;
+			gridpoints[0].num = -1;
+			return gridpoints;
+		}
+		if (right) {
+			gridpoints[newcount].coords.row = gridpoints[i].coords.row;
+			gridpoints[newcount].coords.column = gridpoints[i].coords.column+1;
+			gridpoints[newcount].num = gridpoints[i].num+1;
+			status = checkpath(contination, gridpoints[newcount]);
+			newcount++;
+			neverright = 1;
+		}
+		if (status) {
+			*counter = newcount;
+			gridpoints[0].num = -1;
+			return gridpoints;
+		}
+	}
+	if (!neverup && !neverdown && !neverleft && !neverright) {
+		gridpoints[0].num = -2;	
+		*counter = newcount;
+		return gridpoints;
+
+	}
+	*counter = newcount;
+	return gridpoints;
+}
+/* Checks to make sure the certain cell should be filled with the numbers */
+int checkvacency(int ** blockgrid, gridpoints_t point, sizes_t gridsize, int row, int column, int **grids){
+	if (row!=0) {
+		if (point.coords.row+row >= 0 && point.coords.row+row < gridsize.row) {
+			if (!blockgrid[point.coords.row+row][point.coords.column]){
+				if(grids[point.coords.row+row][point.coords.column] == -1 || grids[point.coords.row+row][point.coords.column] > point.num+1) {
+					grids[point.coords.row+row][point.coords.column] = point.num +1;
+					return 1;	
+				}
+			}	
+		}	
+	}
+	if (column!=0) {
+		if (point.coords.column+column >=0 && point.coords.column+column < gridsize.column){
+			if(!blockgrid[point.coords.row][point.coords.column+column]) {
+				if(grids[point.coords.row][point.coords.column+column] == -1 || grids[point.coords.row][point.coords.column+column] > point.num+1) {
+					grids[point.coords.row][point.coords.column+column] = point.num +1;
+					return 1;	
+				}
+			}
+		}
+	}
+	return 0;
+}
+
+/*Checks whether or not the filled cell is on the path */
+int checkpath(node_t *contination, gridpoints_t point) {
+	node_t *current = contination;
+	while(current!=NULL) {
+		if (current->coords.row == point.coords.row && current->coords.column == point.coords.column){
+			return 1;
+		}
+		current = current->next;
+		
+		
+	}
+	return 0;
+}
+/* Updates the path to the new one based on the numbers grid */
+void updatepath(node_t *breakpoint, sizes_t pathspot, int counter, int ** grids, sizes_t gridsize){
+	node_t *reconstructpoint = breakpoint->next;
+	while (reconstructpoint->coords.row != pathspot.row || reconstructpoint->coords.column != pathspot.column) {
+		reconstructpoint = reconstructpoint->next;
+	}
+	int k;
+	int l;
+	int notfinished = 1; //UDLR
+	
+	node_t *current = reconstructpoint;
+	while (notfinished) {
+		int up = -1;
+		int down = -1;
+		int left = -1;
+		int right = -1;
+		if ((pathspot.row-1)>=0) {
+			up = grids[pathspot.row-1][pathspot.column];
+		}
+		if ((pathspot.row+1) <gridsize.row) {
+			down = grids[pathspot.row+1][pathspot.column];
+		}
+		if ((pathspot.column-1) >= 0) {
+			left = grids[pathspot.row][pathspot.column-1];
+		}
+		if (pathspot.column+1 < gridsize.column) {
+			right = grids[pathspot.row][pathspot.column+1];
+		}	
+		int a[] = {up, down, left, right};
+		int smallest = a[0];
+		int i = 0;
+		int smallesti = 0;
+		for (i=0; i<4; i++) {				
+			if ((a[i] < smallest && a[i]!=-1) || (smallest == -1 && a[i]!=-1)) {
+				smallest = a[i];	
+				smallesti = i;
+				
+			}
+			if (a[i] == 0) {
+				smallest = 0;
+				smallesti = i; 
+				break;
+			}
+		}
+		if (smallesti<=1) {
+			if (smallesti == 0){
+				pathspot.row = pathspot.row-1;
+			}
+			else {
+				pathspot.row = pathspot.row+1;
+			}
+		}
+		else {
+			if (smallesti==2) {
+				pathspot.column = pathspot.column-1;
+			}
+			else {
+				pathspot.column = pathspot.column+1;
+				}
+			}
+		if (pathspot.column == breakpoint->coords.column && pathspot.row == breakpoint->coords.row) {
+			break;
+		}
+		current = create_node(pathspot, NULL);
+		current->next = reconstructpoint;
+		reconstructpoint->prev = current;
+		reconstructpoint = current;
+	}
+	breakpoint->next = current;	
+}
